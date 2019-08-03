@@ -1,0 +1,88 @@
+package cache
+
+import (
+	"container/list"
+	"errors"
+	"sync"
+	"unsafe"
+)
+
+var (
+	ErrorNil   = errors.New("nil")
+	OutOfRange = errors.New("size is not enough")
+)
+
+type Cache interface {
+	Set(key string, value interface{}) error
+	Get(key string) (value interface{}, err error)
+	Delete(key string) error
+}
+
+type LRUCache struct {
+	cacheList *list.List
+	cache     map[string]*list.Element
+	size      int64
+	used      int64
+	mutex     sync.RWMutex
+}
+
+func NewLRUCache(size int64) *LRUCache {
+	return &LRUCache{
+		size:      size,
+		cacheList: list.New(),
+		cache:     make(map[string]*list.Element),
+	}
+}
+
+func (l *LRUCache) Set(key string, value interface{}) error {
+	if l == nil {
+		return ErrorNil
+	}
+
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	size := int64(unsafe.Sizeof(value))
+	if l.size < l.used+size {
+		return OutOfRange
+	}
+	if v, ok := l.cache[key]; ok {
+		l.cacheList.MoveToFront(v)
+		v.Value = value
+		return nil
+	}
+	l.cache[key] = l.cacheList.PushFront(value)
+	l.used += size
+	return nil
+}
+
+func (l *LRUCache) Get(key string) (interface{}, error) {
+	if l == nil {
+		return nil, ErrorNil
+	}
+
+	l.mutex.RLock()
+	defer l.mutex.RUnlock()
+
+	if v, ok := l.cache[key]; ok {
+		l.cacheList.MoveToFront(v)
+		return v.Value, nil
+	}
+	return nil, ErrorNil
+}
+
+func (l *LRUCache) Delete(key string) error {
+	if l == nil {
+		return ErrorNil
+	}
+
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	if v, ok := l.cache[key]; ok {
+		l.cacheList.Remove(v)
+		delete(l.cache, key)
+		l.used -= int64(unsafe.Sizeof(v.Value))
+	}
+	return nil
+}
