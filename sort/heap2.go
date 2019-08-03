@@ -21,7 +21,7 @@ func heap(data []int, i, end int) {
 	}
 
 	n := l
-	if r < end && data[r] > data[l] {
+	if r <= end && data[r] > data[l] {
         n = r
 	}
 
