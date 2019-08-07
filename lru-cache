@@ -26,6 +26,11 @@ type LRUCache struct {
 	mutex     sync.RWMutex
 }
 
+type cacheValue struct {
+	key string
+	value interface{}
+}
+
 func NewLRUCache(size int64) *LRUCache {
 	return &LRUCache{
 		size:      size,
@@ -42,16 +47,26 @@ func (l *LRUCache) Set(key string, value interface{}) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	size := int64(unsafe.Sizeof(value))
-	if l.size < l.used+size {
+	v := cacheValue{
+		key:key,
+		value:value,
+	}
+	size := int64(unsafe.Sizeof(v))
+	if l.size < size {
 		return OutOfRange
+	}
+	for l.size < l.used+size {
+		back := l.cacheList.Back()
+		l.used -= int64(unsafe.Sizeof(back.Value))
+		l.cacheList.Remove(back)
+		delete(l.cache, back.Value.(cacheValue).key)
 	}
 	if v, ok := l.cache[key]; ok {
 		l.cacheList.MoveToFront(v)
-		v.Value = value
+		v.Value.(cacheValue).value = value
 		return nil
 	}
-	l.cache[key] = l.cacheList.PushFront(value)
+	l.cache[key] = l.cacheList.PushFront(v)
 	l.used += size
 	return nil
 }
@@ -65,8 +80,11 @@ func (l *LRUCache) Get(key string) (interface{}, error) {
 	defer l.mutex.RUnlock()
 
 	if v, ok := l.cache[key]; ok {
+		if v == nil {
+			return nil, ErrorNil
+		}
 		l.cacheList.MoveToFront(v)
-		return v.Value, nil
+		return v.Value.(cacheValue).value, nil
 	}
 	return nil, ErrorNil
 }
